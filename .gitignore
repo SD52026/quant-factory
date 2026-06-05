@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# Data (không commit dữ liệu thật/lớn)
+data/pit_store/*
+data/feature_store/*
+!data/pit_store/.gitkeep
+!data/feature_store/.gitkeep
+*.parquet
+*.csv
+
+# Bí mật — KHÔNG BAO GIỜ commit khóa API sàn
+.env
+*.key
+secrets/
