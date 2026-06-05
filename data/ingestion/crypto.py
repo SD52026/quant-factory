@@ -18,7 +18,7 @@ import ccxt
 import pandas as pd
 
 DEFAULT_EXCHANGE = "binanceusdm"  # Binance USDⓈ-M futures (perp), có funding
-DEFAULT_SINCE = "2023-01-01T00:00:00Z"
+DEFAULT_SINCE = "2019-01-01T00:00:00Z"  # ccxt tự trả về từ lúc dữ liệu thật bắt đầu (~9/2019)
 
 
 def _make_exchange(exchange_id: str) -> ccxt.Exchange:

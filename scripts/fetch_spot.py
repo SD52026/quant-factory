@@ -19,7 +19,7 @@ from data import store
 SPOT_EXCHANGE = "binance"   # sàn spot (khác binanceusdm là perp)
 SYMBOLS = ["BTC/USDT", "ETH/USDT"]
 TIMEFRAME = "1h"
-SINCE = "2023-01-01T00:00:00Z"
+SINCE = "2019-01-01T00:00:00Z"  # xa nhat co the (Binance perp bat dau ~9/2019)
 
 
 def main() -> None:
