@@ -70,6 +70,29 @@ def test_short_collects_positive_funding() -> None:
     assert float(res.equity.iloc[-1]) > 1.0  # short THU được funding dương
 
 
+def test_basis_risk_appears_with_spot() -> None:
+    # perp tăng nhanh hơn spot -> basis giãn -> carry (short perp) LỖ phần basis.
+    n = 50
+    perp = list(np.linspace(100, 110, n))   # perp +10%
+    spot = list(np.linspace(100, 105, n))   # spot +5%
+    df = _frame(perp)                        # close = perp
+    df["spot_close"] = spot
+    df["funding"] = 0.0
+    res = Backtester(CostModel(0, 0, 0)).run(df, _AlwaysShort(), delta_neutral=True)
+    assert float(res.equity.iloc[-1]) < 1.0  # rủi ro basis hiện ra -> lỗ
+
+
+def test_no_basis_when_spot_equals_perp() -> None:
+    # spot trùng perp -> basis return = 0 -> price PnL = 0 dù giá chạy mạnh.
+    n = 50
+    px = list(np.linspace(100, 130, n))
+    df = _frame(px)
+    df["spot_close"] = px
+    df["funding"] = 0.0
+    res = Backtester(CostModel(0, 0, 0)).run(df, _AlwaysShort(), delta_neutral=True)
+    assert abs(float(res.equity.iloc[-1]) - 1.0) < 1e-9
+
+
 if __name__ == "__main__":
     import pytest
 

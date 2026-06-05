@@ -66,9 +66,17 @@ class Backtester:
         target = target.clip(-1.0, 1.0)
         positions = target.shift(1).fillna(0.0)  # chống lookahead
 
-        # Lợi nhuận giá (bị vô hiệu nếu delta-neutral vì đã phòng hộ bằng spot).
+        # Lợi nhuận giá.
         if delta_neutral:
-            price_pnl = pd.Series(0.0, index=data.index)
+            if "spot_close" in data.columns:
+                # Carry delta-neutral CÓ rủi ro basis: lãi/lỗ = vị thế × (ret_perp - ret_spot).
+                # Khi perp và spot khớp nhau -> ~0 (như giả định cũ); khi tách nhau -> rủi ro thật.
+                perp_ret = data["close"].pct_change().fillna(0.0)
+                spot_ret = data["spot_close"].pct_change().fillna(0.0)
+                price_pnl = positions * (perp_ret - spot_ret)
+            else:
+                # Không có spot -> giả định hedge hoàn hảo (mô hình cũ, quá lạc quan).
+                price_pnl = pd.Series(0.0, index=data.index)
         else:
             asset_ret = data["close"].pct_change().fillna(0.0)
             price_pnl = positions * asset_ret

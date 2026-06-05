@@ -48,13 +48,32 @@ def prepare_carry_frame(
 
 
 def load_carry_frame(
-    symbol_tag: str, exchange: str = "binanceusdm", n_events: int = 9
+    symbol_tag: str,
+    exchange: str = "binanceusdm",
+    n_events: int = 9,
+    with_spot: bool = True,
+    spot_exchange: str = "binance",
 ) -> pd.DataFrame:
-    """Đọc OHLCV + funding từ PIT store và chuẩn bị frame carry.
+    """Đọc OHLCV perp + funding (+ spot nếu có) từ PIT store, dựng frame carry.
 
     symbol_tag ví dụ 'BTCUSDT' -> đọc:
-      {exchange}_{symbol_tag}_1h_ohlcv  và  {exchange}_{symbol_tag}_funding
+      {exchange}_{symbol_tag}_1h_ohlcv      (perp)
+      {exchange}_{symbol_tag}_funding       (funding)
+      {spot_exchange}_{symbol_tag}_1h_spot  (spot, nếu with_spot và đã tải)
+
+    Nếu có spot, thêm cột 'spot_close' (khớp theo timestamp chung) để engine
+    tính rủi ro basis. Nếu chưa tải spot, frame chạy theo mô hình cũ (naive).
     """
     ohlcv = store.load(f"{exchange}_{symbol_tag}_1h_ohlcv")
     funding = store.load(f"{exchange}_{symbol_tag}_funding")
-    return prepare_carry_frame(ohlcv, funding, n_events)
+    df = prepare_carry_frame(ohlcv, funding, n_events)
+
+    if with_spot:
+        try:
+            spot = store.load(f"{spot_exchange}_{symbol_tag}_1h_spot")
+        except FileNotFoundError:
+            return df  # chưa có spot -> trả frame naive
+        common = df.index.intersection(spot.index)
+        df = df.loc[common].copy()
+        df["spot_close"] = spot["close"].loc[common]
+    return df
