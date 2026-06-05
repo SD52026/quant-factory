@@ -93,6 +93,21 @@ def test_no_basis_when_spot_equals_perp() -> None:
     assert abs(float(res.equity.iloc[-1]) - 1.0) < 1e-9
 
 
+def test_rebalancing_cost_reduces_equity() -> None:
+    # Giá biến động mạnh, spot==perp (basis=0), funding dương cố định.
+    # rebalance=True phải cho equity THẤP hơn (tốn phí tái cân bằng hedge).
+    rng = np.random.default_rng(0)
+    n = 500
+    px = list(100 * np.exp(np.cumsum(rng.normal(0, 0.02, n))))
+    df = _frame(px)
+    df["spot_close"] = px
+    df["funding"] = [0.0001] * n
+    bt = Backtester(CostModel(spread_bps=2, slippage_bps=1, fee_bps=5))
+    no_rebal = bt.run(df, _AlwaysShort(), delta_neutral=True, cost_multiplier=2.0, rebalance=False)
+    with_rebal = bt.run(df, _AlwaysShort(), delta_neutral=True, cost_multiplier=2.0, rebalance=True)
+    assert float(with_rebal.equity.iloc[-1]) < float(no_rebal.equity.iloc[-1])
+
+
 if __name__ == "__main__":
     import pytest
 

@@ -58,6 +58,8 @@ class Backtester:
         strategy: Strategy,
         delta_neutral: bool = False,
         cost_multiplier: float = 1.0,
+        rebalance: bool = False,
+        rebalance_fraction: float = 1.0,
     ) -> BacktestResult:
         if "close" not in data.columns:
             raise ValueError("data phải có cột 'close'")
@@ -66,20 +68,19 @@ class Backtester:
         target = target.clip(-1.0, 1.0)
         positions = target.shift(1).fillna(0.0)  # chống lookahead
 
+        perp_ret = data["close"].pct_change().fillna(0.0)
+
         # Lợi nhuận giá.
         if delta_neutral:
             if "spot_close" in data.columns:
                 # Carry delta-neutral CÓ rủi ro basis: lãi/lỗ = vị thế × (ret_perp - ret_spot).
-                # Khi perp và spot khớp nhau -> ~0 (như giả định cũ); khi tách nhau -> rủi ro thật.
-                perp_ret = data["close"].pct_change().fillna(0.0)
                 spot_ret = data["spot_close"].pct_change().fillna(0.0)
                 price_pnl = positions * (perp_ret - spot_ret)
             else:
                 # Không có spot -> giả định hedge hoàn hảo (mô hình cũ, quá lạc quan).
                 price_pnl = pd.Series(0.0, index=data.index)
         else:
-            asset_ret = data["close"].pct_change().fillna(0.0)
-            price_pnl = positions * asset_ret
+            price_pnl = positions * perp_ret
 
         # Lợi nhuận funding.
         if "funding" in data.columns:
@@ -94,7 +95,18 @@ class Backtester:
         turnover = positions.diff().abs().fillna(positions.abs())
         tx_cost = self.cost_model.transaction_cost(turnover) * cost_multiplier
         carry = self.cost_model.carry_cost(positions)
-        costs = tx_cost + carry
+
+        # Chi phí TÁI CÂN BẰNG hedge (chỉ khi delta-neutral): giá chạy -> phải giao
+        # dịch lại để giữ trung tính. Tỉ lệ với |biến động giá| -> càng động càng tốn.
+        # rebalance_fraction: phần drift thực sự rebalance (1.0 = rebalance liên tục,
+        # bi quan nhất; thực tế dùng band nên thấp hơn).
+        if rebalance and delta_neutral:
+            unit = self.cost_model.cost_per_unit_turnover * cost_multiplier
+            rebal_cost = positions.abs() * perp_ret.abs() * unit * rebalance_fraction
+        else:
+            rebal_cost = pd.Series(0.0, index=data.index)
+
+        costs = tx_cost + carry + rebal_cost
 
         net = gross - costs
         equity = (1.0 + net).cumprod()
