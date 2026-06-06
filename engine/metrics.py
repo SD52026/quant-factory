@@ -59,6 +59,23 @@ def max_drawdown(equity: pd.Series) -> float:
     return float(dd.min())
 
 
+def cagr(equity: pd.Series, periods_per_year: int = 252) -> float:
+    """Lợi nhuận GỘP THẬT (compound annual growth rate) từ đường vốn.
+
+    Khác annualized_return (trung bình số học): CAGR là cái bạn THỰC SỰ gộp được.
+    Với chiến lược vol cao, annual số học phồng to hơn CAGR rất nhiều (volatility
+    drag). So hai con số này cho thấy ảo giác lợi nhuận lớn cỡ nào.
+    """
+    e = pd.Series(equity).dropna()
+    if len(e) < 2:
+        return 0.0
+    total = float(e.iloc[-1] / e.iloc[0])
+    years = len(e) / periods_per_year
+    if total <= 0 or years <= 0:
+        return -1.0
+    return total ** (1.0 / years) - 1.0
+
+
 def _per_period_sharpe(returns: np.ndarray) -> float:
     if returns.size < 2 or np.std(returns, ddof=1) == 0:
         return 0.0
@@ -140,6 +157,7 @@ def summary(
     """Gom toàn bộ chỉ số vào một dict tiện in ra."""
     return {
         "annual_return": annualized_return(returns, periods_per_year),
+        "cagr": cagr(result_equity, periods_per_year),
         "annual_vol": annualized_vol(returns, periods_per_year),
         "sharpe": sharpe_ratio(returns, periods_per_year),
         "max_drawdown": max_drawdown(result_equity),

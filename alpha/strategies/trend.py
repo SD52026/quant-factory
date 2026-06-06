@@ -1,24 +1,16 @@
 """
-Chiến lược TIME-SERIES MOMENTUM (trend) — chiến lược THẬT thứ hai.
+Chiến lược TREND — họ time-series momentum.
 
-GIẢ THUYẾT KINH TẾ:
-  Xu hướng có quán tính: do thị trường phản ứng chậm với thông tin, hiệu ứng bầy
-  đàn, và dòng tiền theo đà. Time-series momentum là một trong những edge được
-  ghi nhận bền vững nhất qua nhiều lớp tài sản (Moskowitz/Ooi/Pedersen 2012).
+Hai phiên bản:
+  - TimeSeriesMomentum : baseline THÔ (một khung, nhị phân ±1). Giữ để so sánh.
+  - EnsembleTrend      : bản ROBUST, được biện minh TIÊN NGHIỆM (không fishing):
+      * Tổ hợp nhiều khung (1/3/6/12 tháng) -> trung bình hóa rủi ro chọn sai
+        lookback, thay vì đặt cược một khung may mắn.
+      * Vol-scaling -> chuẩn hóa rủi ro: giảm vị thế khi thị trường động mạnh.
+        Đây là tiêu chuẩn của trend chuyên nghiệp (lý thuyết, không phải vì
+        nó cho Sharpe cao).
 
-  Tín hiệu: dấu của lợi nhuận qua cửa sổ lookback. Giá cao hơn `lookback` bar
-  trước -> đang tăng -> long (+1); thấp hơn -> giảm -> short (−1).
-
-KHÁC carry thế nào:
-  Carry trung tính thị trường, kiếm từ funding. Trend CÓ HƯỚNG, kiếm từ chuyển
-  động giá. Hai nguồn lợi nhuận khác nhau -> kỳ vọng ÍT TƯƠNG QUAN -> gộp lại
-  cho danh mục mạnh hơn (đây là điểm của breadth).
-
-  Trend giao dịch perp trực tiếp (delta_neutral=False), nên cũng chịu funding:
-  long khi funding dương thì PHẢI trả funding — engine tự tính khoản này.
-
-LƯU Ý: lookback chọn theo lý lẽ (≈30 ngày), KHÔNG tối ưu trên dữ liệu (tránh
-  overfit). Trên dữ liệu vô hướng (random walk), trend KHÔNG nên có edge.
+GIẢ THUYẾT KINH TẾ: xu hướng có quán tính (phản ứng chậm, bầy đàn, dòng tiền).
 """
 from __future__ import annotations
 
@@ -29,14 +21,41 @@ from engine.strategy import Strategy
 
 
 class TimeSeriesMomentum(Strategy):
-    """Long khi xu hướng tăng, short khi giảm (dấu của lợi nhuận quá khứ)."""
+    """Baseline thô: dấu của lợi nhuận qua MỘT khung, vị thế nhị phân ±1."""
 
     def __init__(self, lookback: int = 24 * 30) -> None:
-        # lookback tính theo số bar (mặc định ~30 ngày với nến 1h).
         self.lookback = lookback
         self.name = f"tsmom_{lookback}h"
 
     def generate_signals(self, data: pd.DataFrame) -> pd.Series:
-        # Lợi nhuận qua cửa sổ lookback — chỉ dùng dữ liệu quá khứ (không lookahead).
         mom = data["close"].pct_change(self.lookback)
         return pd.Series(np.sign(mom).fillna(0.0), index=data.index)
+
+
+class EnsembleTrend(Strategy):
+    """Robust TSMOM: tổ hợp nhiều khung + vol-scaling, vị thế liên tục [-1, 1]."""
+
+    def __init__(
+        self,
+        lookbacks: tuple[int, ...] = (24 * 30, 24 * 90, 24 * 180, 24 * 365),
+        vol_window: int = 24 * 30,
+        target_vol: float = 0.01,  # rủi ro mục tiêu/bar (tiên nghiệm, ~1%/giờ)
+    ) -> None:
+        self.lookbacks = lookbacks
+        self.vol_window = vol_window
+        self.target_vol = target_vol
+        self.name = "ensemble_trend"
+
+    def generate_signals(self, data: pd.DataFrame) -> pd.Series:
+        close = data["close"]
+
+        # Tín hiệu hướng = TRUNG BÌNH dấu lợi nhuận qua các khung (-1..+1).
+        sigs = [np.sign(close.pct_change(k)) for k in self.lookbacks]
+        ensemble = pd.concat(sigs, axis=1).mean(axis=1)
+
+        # Vol-scaling: nhân nghịch biến động gần đây (chỉ dùng quá khứ).
+        realized_vol = close.pct_change().rolling(self.vol_window).std()
+        scale = self.target_vol / realized_vol.replace(0.0, np.nan)
+
+        pos = (ensemble * scale).clip(-1.0, 1.0)
+        return pos.fillna(0.0)
